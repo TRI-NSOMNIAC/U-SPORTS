@@ -1,0 +1,81 @@
+import React, { useEffect, useState } from 'react'
+import { useParams } from 'react-router'
+import { Card, Badge, Skeleton } from '../../components/ui'
+import { supabase } from '../../lib/supabase'
+import { getSportLabel, getSportIcon, getInitials } from '../../lib/utils'
+
+export default function GuestAthleteProfile() {
+  const { id } = useParams<{ id: string }>()
+  const [athlete, setAthlete] = useState<any>(null)
+  const [stats, setStats] = useState<any>(null)
+  const [insights, setInsights] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!id) return
+    Promise.all([
+      supabase.from('athletes').select('*, profile:profiles(full_name, avatar_url)').eq('id', id).eq('verification_status', 'approved').single(),
+      supabase.from('player_season_stats').select('*').eq('athlete_id', id).order('updated_at', { ascending: false }).limit(1).single(),
+      supabase.from('insights').select('*').eq('entity_type', 'player').eq('entity_id', id).limit(3),
+    ]).then(([a, s, ins]) => {
+      setAthlete(a.data); setStats(s.data); setInsights(ins.data ?? [])
+    }).finally(() => setLoading(false))
+  }, [id])
+
+  if (loading) return <div className="max-w-xl mx-auto px-4 py-8 space-y-4">{Array.from({length:3}).map((_,i) => <Skeleton key={i} className="h-24" />)}</div>
+  if (!athlete) return <div className="text-center py-16 text-[var(--text-muted)]">Athlete not found</div>
+
+  return (
+    <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
+      <Card className="flex items-center gap-5">
+        <div className="w-16 h-16 rounded-full bg-[var(--school-primary)] flex items-center justify-center text-xl font-bold text-[var(--school-secondary)]">
+          {getInitials(athlete.profile?.full_name ?? '?')}
+        </div>
+        <div>
+          <h1 className="font-bold text-xl">{athlete.profile?.full_name}</h1>
+          <p className="text-sm text-[var(--text-muted)]">{getSportIcon(athlete.sport as any)} {getSportLabel(athlete.sport as any)}</p>
+          <div className="flex gap-2 mt-2">
+            <Badge size="sm">{athlete.position}</Badge>
+            {athlete.jersey_number && <Badge size="sm">#{athlete.jersey_number}</Badge>}
+            <Badge size="sm">{athlete.year_level}</Badge>
+          </div>
+        </div>
+      </Card>
+
+      {stats && (
+        <Card>
+          <h3 className="font-bold mb-4">Season Stats</h3>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-black font-[Barlow_Condensed]">{stats.games_played}</p>
+              <p className="text-xs text-[var(--text-muted)]">GP</p>
+            </div>
+            {athlete.sport === 'basketball' && <>
+              <div><p className="text-2xl font-black font-[Barlow_Condensed]">{stats.games_played > 0 ? ((stats.stats?.total_points ?? 0) / stats.games_played).toFixed(1) : '0.0'}</p><p className="text-xs text-[var(--text-muted)]">PPG</p></div>
+              <div><p className="text-2xl font-black font-[Barlow_Condensed]">{stats.games_played > 0 ? ((stats.stats?.total_rebounds ?? 0) / stats.games_played).toFixed(1) : '0.0'}</p><p className="text-xs text-[var(--text-muted)]">RPG</p></div>
+            </>}
+            {athlete.sport === 'volleyball' && <>
+              <div><p className="text-2xl font-black font-[Barlow_Condensed]">{stats.stats?.kills ?? 0}</p><p className="text-xs text-[var(--text-muted)]">Kills</p></div>
+              <div><p className="text-2xl font-black font-[Barlow_Condensed]">{stats.stats?.aces ?? 0}</p><p className="text-xs text-[var(--text-muted)]">Aces</p></div>
+            </>}
+            {athlete.sport === 'table-tennis' && <>
+              <div><p className="text-2xl font-black font-[Barlow_Condensed]">{stats.stats?.mw ?? 0}</p><p className="text-xs text-[var(--text-muted)]">Wins</p></div>
+              <div><p className="text-2xl font-black font-[Barlow_Condensed]">{stats.stats?.win_pct ?? '0'}%</p><p className="text-xs text-[var(--text-muted)]">Win%</p></div>
+            </>}
+          </div>
+        </Card>
+      )}
+
+      {insights.length > 0 && (
+        <Card>
+          <h3 className="font-bold mb-3">Performance Insights</h3>
+          {insights.map(i => (
+            <div key={i.id} className="text-sm py-2 border-b border-[var(--border-subtle)] last:border-0">
+              {i.insight_text}
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  )
+}

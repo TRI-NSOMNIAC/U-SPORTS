@@ -1,0 +1,128 @@
+import React, { useRef } from 'react'
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
+import { ZoomIn, ZoomOut, Maximize2, Download } from 'lucide-react'
+import { toPng } from 'html-to-image'
+import type { Bracket, Match } from '../../types'
+import { cn } from '../../lib/utils'
+
+interface Props {
+  brackets: Bracket[]
+  matches: Match[]
+  onMatchClick?: (match: Match) => void
+  readonly?: boolean
+}
+
+export default function BracketView({ brackets, matches, onMatchClick, readonly }: Props) {
+  const bracketRef = useRef<HTMLDivElement>(null)
+
+  const maxRound = Math.max(...brackets.map(b => b.round), 0)
+  const rounds = Array.from({ length: maxRound }, (_, i) => i + 1)
+
+  const getBracketsForRound = (round: number) =>
+    brackets.filter(b => b.round === round && b.bracket_type !== 'losers').sort((a, b) => a.match_order - b.match_order)
+
+  const getMatch = (bracketId: string) =>
+    matches.find(m => m.bracket_id === bracketId)
+
+  const handleExport = async () => {
+    if (!bracketRef.current) return
+    const dataUrl = await toPng(bracketRef.current, { backgroundColor: '#111118' })
+    const link = document.createElement('a')
+    link.download = 'bracket.png'
+    link.href = dataUrl
+    link.click()
+  }
+
+  if (brackets.length === 0) {
+    return <div className="text-center text-[var(--text-muted)] py-12">No bracket generated yet</div>
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex gap-2 mb-3 justify-end">
+        <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-[var(--surface-elevated)] hover:bg-[var(--border-subtle)] transition-colors">
+          <Download className="w-3.5 h-3.5" />Export PNG
+        </button>
+      </div>
+      <TransformWrapper
+        initialScale={1}
+        minScale={0.3}
+        maxScale={2}
+        centerOnInit
+      >
+        {({ zoomIn, zoomOut, resetTransform }) => (
+          <div className="rounded-xl overflow-hidden border border-[var(--border-subtle)] bg-[#111118]">
+            <div className="flex gap-2 p-2 bg-[var(--surface-card)] border-b border-[var(--border-subtle)]">
+              <button onClick={() => zoomIn()} className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"><ZoomIn className="w-4 h-4" /></button>
+              <button onClick={() => zoomOut()} className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"><ZoomOut className="w-4 h-4" /></button>
+              <button onClick={() => resetTransform()} className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"><Maximize2 className="w-4 h-4" /></button>
+            </div>
+            <TransformComponent>
+              <div ref={bracketRef} className="flex gap-0 p-6 min-w-max">
+                {rounds.map(round => {
+                  const roundBrackets = getBracketsForRound(round)
+                  const isLastRound = round === maxRound
+                  return (
+                    <div key={round} className="flex flex-col justify-around min-w-[180px]">
+                      <div className="text-center text-xs text-[var(--text-muted)] mb-4 font-semibold uppercase tracking-wider px-4">
+                        {isLastRound ? '🏆 Final' : round === maxRound - 1 ? 'Semi-Final' : `Round ${round}`}
+                      </div>
+                      <div className="flex flex-col justify-around flex-1 gap-4">
+                        {roundBrackets.map(bracket => {
+                          const match = getMatch(bracket.id)
+                          const isLive = match?.status === 'live'
+                          const isDone = match?.status === 'completed' || bracket.is_bye
+                          const clickable = !readonly && match && match.status !== 'completed'
+                          return (
+                            <div key={bracket.id} className="relative">
+                              <div
+                                className={cn(
+                                  'border rounded-xl overflow-hidden transition-all',
+                                  isLive ? 'border-[#FF3355] shadow-[0_0_12px_rgba(255,51,85,0.3)]' : 'border-[var(--border-subtle)]',
+                                  isDone ? 'opacity-80' : '',
+                                  clickable ? 'cursor-pointer hover:border-[#0066FF]/50 hover:shadow-[0_0_8px_rgba(0,102,255,0.2)]' : '',
+                                )}
+                                style={{ width: 160 }}
+                                onClick={() => clickable && match && onMatchClick?.(match)}
+                              >
+                                {isLive && (
+                                  <div className="bg-[#FF3355] text-white text-[9px] font-bold text-center py-0.5 tracking-widest">
+                                    ● LIVE
+                                  </div>
+                                )}
+                                {/* Participant A */}
+                                <div className={cn(
+                                  'flex items-center justify-between px-3 py-2 bg-[var(--surface-card)] border-b border-[var(--border-subtle)]',
+                                  bracket.winner_id === bracket.participant_a_id && 'bg-[#00FF88]/10'
+                                )}>
+                                  <span className="text-xs font-medium truncate flex-1">
+                                    {bracket.participant_a_id ? bracket.participant_a_id.slice(0, 8) + '...' : 'TBD'}
+                                  </span>
+                                  {bracket.winner_id === bracket.participant_a_id && <span className="text-[#00FF88] text-xs ml-1">✓</span>}
+                                </div>
+                                {/* Participant B */}
+                                <div className={cn(
+                                  'flex items-center justify-between px-3 py-2 bg-[var(--surface-card)]',
+                                  bracket.winner_id === bracket.participant_b_id && 'bg-[#00FF88]/10'
+                                )}>
+                                  <span className="text-xs font-medium truncate flex-1">
+                                    {bracket.is_bye ? 'BYE' : bracket.participant_b_id ? bracket.participant_b_id.slice(0, 8) + '...' : 'TBD'}
+                                  </span>
+                                  {bracket.winner_id === bracket.participant_b_id && <span className="text-[#00FF88] text-xs ml-1">✓</span>}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </TransformComponent>
+          </div>
+        )}
+      </TransformWrapper>
+    </div>
+  )
+}
