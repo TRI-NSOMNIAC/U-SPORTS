@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { Play, Square, RotateCcz, Tv2, Lock, Unlock, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { Play, Square, RotateCcw, Tv2, Lock, Unlock, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { Button, Card, Badge, Alert, Modal, Select } from '../../components/ui'
 import api from '../../lib/api'
 import { supabase } from '../../lib/supabase'
@@ -249,7 +249,7 @@ export default function OrganizerScoring() {
             </Button>
           ) : (
             <>
-              <Button variant="secondary" icon={<RotateCcz className="w-4 h-4" />} onClick={handleUndo} size="sm">
+              <Button variant="secondary" icon={<RotateCcw className="w-4 h-4" />} onClick={handleUndo} size="sm">
                 Undo
               </Button>
               <Button variant="danger" icon={<Square className="w-4 h-4" />} onClick={() => setEndConfirm(true)} size="sm">

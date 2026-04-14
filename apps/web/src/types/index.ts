@@ -151,6 +151,8 @@ export interface Bracket {
   winner_id: string | null
   next_bracket_id: string | null
   is_bye: boolean
+  /** 'winners' | 'losers' | 'grand_final' from DB */
+  bracket_type?: string | null
 }
 
 export interface Match {

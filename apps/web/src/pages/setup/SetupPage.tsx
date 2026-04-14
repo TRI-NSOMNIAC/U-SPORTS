@@ -1,9 +1,16 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check, ChevronRight, ChevronLeft, Shield, Palette, Globe, Trophy, Calendar } from 'lucide-react'
-import { Button, Input, Card, Alert, Toggle } from '../../components/ui'
+import { Button, Input, Card, Alert } from '../../components/ui'
 import api from '../../lib/api'
 import { useInstitutionStore } from '../../stores/institutionStore'
+import {
+  setupDomainsSchema,
+  setupInstitutionSchema,
+  setupSeasonSchema,
+  setupSportsSchema,
+  setupSuperAdminSchema,
+} from '../../lib/validation/forms'
 
 const STEPS = [
   { id: 1, label: 'Admin Account', icon: Shield },
@@ -53,9 +60,53 @@ export default function SetupPage() {
     }))
   }
 
+  const validateCurrentStep = (): string | null => {
+    switch (step) {
+      case 1: {
+        const p = setupSuperAdminSchema(form.domains.staff, form.domains.student).safeParse({
+          full_name: form.superAdmin.full_name,
+          email: form.superAdmin.email,
+          password: form.superAdmin.password,
+          confirmPassword: form.superAdmin.confirmPassword,
+        })
+        return p.success ? null : p.error.issues[0]?.message ?? 'Check the form'
+      }
+      case 2: {
+        const p = setupInstitutionSchema.safeParse(form.institution)
+        return p.success ? null : p.error.issues[0]?.message ?? 'Check the form'
+      }
+      case 3: {
+        const p = setupDomainsSchema.safeParse(form.domains)
+        return p.success ? null : p.error.issues[0]?.message ?? 'Check the form'
+      }
+      case 4: {
+        const p = setupSportsSchema.safeParse(form.sports)
+        return p.success ? null : p.error.issues[0]?.message ?? 'Check the form'
+      }
+      case 5: {
+        const p = setupSeasonSchema.safeParse(form.season)
+        return p.success ? null : p.error.issues[0]?.message ?? 'Check the form'
+      }
+      default:
+        return null
+    }
+  }
+
+  const goNext = () => {
+    setError('')
+    const msg = validateCurrentStep()
+    if (msg) {
+      setError(msg)
+      return
+    }
+    setStep((s) => s + 1)
+  }
+
   const handleSubmit = async () => {
-    if (form.superAdmin.password !== form.superAdmin.confirmPassword) {
-      setError('Passwords do not match')
+    setError('')
+    const stepErr = validateCurrentStep()
+    if (stepErr) {
+      setError(stepErr)
       return
     }
     setLoading(true)
@@ -131,8 +182,18 @@ export default function SetupPage() {
             <div className="space-y-4">
               <h2 className="text-xl font-bold">Create Super Admin Account</h2>
               <p className="text-sm text-[var(--text-muted)]">This account has full platform control.</p>
+              <Alert type="info" className="text-xs">
+                Use your <strong>staff</strong> email (@{form.domains.staff}), not @{form.domains.student}.
+              </Alert>
               <Input label="Full Name" placeholder="Juan dela Cruz" value={form.superAdmin.full_name} onChange={(e) => update('superAdmin', 'full_name', e.target.value)} />
-              <Input label="Email" type="email" placeholder="admin@nu-dasma.edu.ph" value={form.superAdmin.email} onChange={(e) => update('superAdmin', 'email', e.target.value)} />
+              <Input
+                label="Email (staff domain)"
+                type="email"
+                hint={`Must end with @${form.domains.staff}`}
+                placeholder={`admin@${form.domains.staff}`}
+                value={form.superAdmin.email}
+                onChange={(e) => update('superAdmin', 'email', e.target.value)}
+              />
               <Input label="Password" type="password" placeholder="Min. 8 characters" value={form.superAdmin.password} onChange={(e) => update('superAdmin', 'password', e.target.value)} />
               <Input label="Confirm Password" type="password" placeholder="Repeat password" value={form.superAdmin.confirmPassword} onChange={(e) => update('superAdmin', 'confirmPassword', e.target.value)} />
             </div>
@@ -246,7 +307,7 @@ export default function SetupPage() {
             )}
             <div className="flex-1" />
             {step < 5 ? (
-              <Button icon={<ChevronRight className="w-4 h-4" />} onClick={() => setStep((s) => s + 1)}>
+              <Button icon={<ChevronRight className="w-4 h-4" />} onClick={goNext}>
                 Continue
               </Button>
             ) : (

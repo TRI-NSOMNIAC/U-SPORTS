@@ -8,16 +8,20 @@ import 'services/router.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Future.wait([
-    Supabase.initialize(
-      url: const String.fromEnvironment('SUPABASE_URL'),
-      anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-      realtimeClientOptions: const RealtimeClientOptions(
-        eventsPerSecond: 10,
-      ),
+  await Supabase.initialize(
+    url: const String.fromEnvironment('SUPABASE_URL'),
+    anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
+    realtimeClientOptions: const RealtimeClientOptions(
+      eventsPerSecond: 10,
     ),
-    Firebase.initializeApp(),
-  ]);
+  );
+
+  // FCM needs `flutterfire configure` + google-services.json; allow app to run without it.
+  try {
+    await Firebase.initializeApp();
+  } catch (e, st) {
+    debugPrint('Firebase init skipped (configure FlutterFire for push): $e\n$st');
+  }
 
   runApp(const ProviderScope(child: USportsApp()));
 }

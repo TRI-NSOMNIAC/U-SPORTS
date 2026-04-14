@@ -60,7 +60,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 'U-Sports',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'BarlowCondensed',
                   fontSize: 48,
                   fontWeight: FontWeight.w900,
                   color: AppTheme.textPrimary,

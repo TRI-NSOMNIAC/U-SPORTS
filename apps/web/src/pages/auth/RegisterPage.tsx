@@ -5,6 +5,7 @@ import { Button, Input, Select, Alert, Card } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useInstitutionStore } from '../../stores/institutionStore'
 import { getSportLabel } from '../../lib/utils'
+import { registerAccountSchema, registerProfileSchema } from '../../lib/validation/forms'
 
 const STEPS = ['Account Info', 'Athlete Profile', 'Documents', 'Review']
 
@@ -43,7 +44,48 @@ export default function RegisterPage() {
     department: '',
   })
 
+  const maxDocBytes = 5 * 1024 * 1024
+
   const update = (field: string, value: string) => setForm((f) => ({ ...f, [field]: value }))
+
+  const goNext = () => {
+    setError('')
+    const studentDomain = institution?.student_email_domain ?? 'students.nu-dasma.edu.ph'
+    if (step === 0) {
+      const acc = registerAccountSchema(studentDomain).safeParse({
+        full_name: form.full_name,
+        email: form.email,
+        password: form.password,
+      })
+      if (!acc.success) {
+        setError(acc.error.issues[0]?.message ?? 'Check account fields')
+        return
+      }
+    } else if (step === 1) {
+      const prof = registerProfileSchema.safeParse({
+        student_id: form.student_id,
+        sport: form.sport,
+        position: form.position,
+        jersey_number: form.jersey_number,
+        year_level: form.year_level,
+        department: form.department,
+      })
+      if (!prof.success) {
+        setError(prof.error.issues[0]?.message ?? 'Check profile fields')
+        return
+      }
+    } else if (step === 2) {
+      if (!corFile || !medFile) {
+        setError('Upload both your COR and Medical Certificate to continue')
+        return
+      }
+      if (corFile.size > maxDocBytes || medFile.size > maxDocBytes) {
+        setError('Each document must be 5MB or smaller')
+        return
+      }
+    }
+    setStep((s) => s + 1)
+  }
 
   const activeSports = sports.filter((s) => s.is_active).map((s) => ({ value: s.slug, label: getSportLabel(s.slug as any) }))
   const positions = sports.find((s) => s.slug === form.sport)?.positions as string[] ?? []
@@ -53,23 +95,42 @@ export default function RegisterPage() {
       setError('Please upload both your COR and Medical Certificate')
       return
     }
+    if (corFile.size > maxDocBytes || medFile.size > maxDocBytes) {
+      setError('Each document must be 5MB or smaller')
+      return
+    }
 
     setLoading(true)
     setError('')
 
     try {
-      // Validate domain
       const studentDomain = institution?.student_email_domain ?? 'students.nu-dasma.edu.ph'
-      if (!form.email.endsWith(`@${studentDomain}`)) {
-        throw new Error(`Use your school email: @${studentDomain}`)
+      const acc = registerAccountSchema(studentDomain).safeParse({
+        full_name: form.full_name,
+        email: form.email,
+        password: form.password,
+      })
+      if (!acc.success) {
+        throw new Error(acc.error.issues[0]?.message ?? 'Check account fields')
+      }
+      const prof = registerProfileSchema.safeParse({
+        student_id: form.student_id,
+        sport: form.sport,
+        position: form.position,
+        jersey_number: form.jersey_number,
+        year_level: form.year_level,
+        department: form.department,
+      })
+      if (!prof.success) {
+        throw new Error(prof.error.issues[0]?.message ?? 'Check profile fields')
       }
 
       // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
+        email: acc.data.email,
+        password: acc.data.password,
         options: {
-          data: { full_name: form.full_name, role: 'athlete' },
+          data: { full_name: acc.data.full_name, role: 'athlete' },
         },
       })
 
@@ -81,12 +142,12 @@ export default function RegisterPage() {
         .from('athletes')
         .insert({
           profile_id: authData.user.id,
-          student_id: form.student_id,
-          sport: form.sport,
-          position: form.position,
-          jersey_number: form.jersey_number || null,
-          year_level: form.year_level,
-          department: form.department,
+          student_id: prof.data.student_id,
+          sport: prof.data.sport,
+          position: prof.data.position,
+          jersey_number: prof.data.jersey_number || null,
+          year_level: prof.data.year_level,
+          department: prof.data.department,
           verification_status: 'pending',
           season_status: 'active',
         })
@@ -250,7 +311,7 @@ export default function RegisterPage() {
             )}
             <div className="flex-1" />
             {step < 3 ? (
-              <Button icon={<ChevronRight className="w-4 h-4" />} onClick={() => setStep((s) => s + 1)}>
+              <Button icon={<ChevronRight className="w-4 h-4" />} onClick={goNext}>
                 Continue
               </Button>
             ) : (

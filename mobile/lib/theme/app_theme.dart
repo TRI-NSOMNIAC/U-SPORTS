@@ -35,13 +35,11 @@ class AppTheme {
         onSurface: textPrimary,
         error: danger,
       ),
-      fontFamily: 'DMSans',
       appBarTheme: const AppBarTheme(
         backgroundColor: surfaceCard,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          fontFamily: 'BarlowCondensed',
           fontSize: 20,
           fontWeight: FontWeight.w700,
           color: textPrimary,

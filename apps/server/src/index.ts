@@ -59,6 +59,15 @@ app.use('/api/announcements', announcementsRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/admin', adminRouter)
 
+// Friendly root — API has no HTML; avoids "is the server broken?" confusion
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'U-Sports API',
+    health: '/health',
+    api: '/api',
+  })
+})
+
 // 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }))
 

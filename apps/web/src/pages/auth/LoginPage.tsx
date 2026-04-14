@@ -5,6 +5,7 @@ import { Button, Input, Alert, Card } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useInstitutionStore } from '../../stores/institutionStore'
 import { useAuthStore } from '../../stores/authStore'
+import { loginFormSchema } from '../../lib/validation/forms'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -21,7 +22,14 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+      const parsed = loginFormSchema.safeParse({ email: email.trim(), password })
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues[0]?.message ?? 'Invalid form')
+      }
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: parsed.data.email,
+        password: parsed.data.password,
+      })
       if (authError) throw new Error(authError.message)
       if (data.session) {
         await fetchProfile(data.session.user.id)

@@ -42,7 +42,6 @@ class HomeScreen extends ConsumerWidget {
                   Text(
                     'U-Sports',
                     style: TextStyle(
-                      fontFamily: 'BarlowCondensed',
                       fontSize: 36,
                       fontWeight: FontWeight.w900,
                       color: AppTheme.schoolSecondary,
