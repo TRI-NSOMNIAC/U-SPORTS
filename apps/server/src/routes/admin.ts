@@ -22,6 +22,17 @@ router.get('/stats', requireAuth, requireRole('super_admin', 'organizer'), async
   })
 })
 
+// List organizers (super admin)
+router.get('/organizers', requireAuth, requireRole('super_admin'), async (_req, res) => {
+  const { data, error } = await supabase
+    .from('organizers')
+    .select('*, profile:profiles(id, full_name, email, avatar_url, role)')
+    .order('created_at', { ascending: false })
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data ?? [])
+})
+
 // Invite organizer
 router.post('/organizers/invite', requireAuth, requireRole('super_admin'), async (req: AuthRequest, res) => {
   const schema = z.object({

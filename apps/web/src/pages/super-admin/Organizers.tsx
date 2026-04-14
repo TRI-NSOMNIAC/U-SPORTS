@@ -19,7 +19,7 @@ export default function SuperAdminOrganizers() {
   const [success, setSuccess] = useState('')
 
   const fetchOrganizers = () => {
-    api.get('/organizers').then(r => { setOrganizers(r.data); setLoading(false) }).catch(() => setLoading(false))
+    api.get('/admin/organizers').then(r => { setOrganizers(r.data); setLoading(false) }).catch(() => setLoading(false))
   }
 
   useEffect(() => { fetchOrganizers() }, [])

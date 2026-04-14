@@ -22,7 +22,7 @@ export const useInstitutionStore = create<InstitutionState>()((set) => ({
       const { data: institution } = await supabase
         .from('institution')
         .select('*')
-        .single()
+        .maybeSingle()
 
       const { data: sports } = await supabase
         .from('sports_config')

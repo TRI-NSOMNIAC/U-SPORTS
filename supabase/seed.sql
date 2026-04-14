@@ -1,12 +1,13 @@
 -- NU Dasmarinas seed data (for development)
 -- Run after migrations. Creates institution config and sport definitions.
 
--- Institution
+-- Institution (one row; is_setup_complete FALSE so Setup Wizard can still run)
 INSERT INTO institution (
   name, abbreviation, tagline, primary_color, secondary_color,
   address, region, staff_email_domain, student_email_domain,
   is_setup_complete
-) VALUES (
+)
+SELECT
   'National University Dasmariñas',
   'NU Dasmariñas',
   'Animo NU!',
@@ -16,8 +17,8 @@ INSERT INTO institution (
   'CALABARZON',
   'nu-dasma.edu.ph',
   'students.nu-dasma.edu.ph',
-  TRUE
-) ON CONFLICT DO NOTHING;
+  FALSE
+WHERE NOT EXISTS (SELECT 1 FROM institution LIMIT 1);
 
 -- Sports configuration
 INSERT INTO sports_config (slug, display_name, icon, is_active, stat_definitions, positions, sort_order)

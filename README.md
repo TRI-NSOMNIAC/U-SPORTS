@@ -31,15 +31,41 @@ u-sports/
 
 ## Getting Started
 
-### 1. Supabase Setup
+### 1. Create a Supabase project
 
-1. Create a new Supabase project at https://supabase.com
-2. Run migrations in order from `supabase/migrations/` via the SQL editor
-3. Run `supabase/seed.sql` to seed institution config and sports
-4. Create storage buckets: `verification-documents` (private) and `institution-assets` (public)
-5. Enable Realtime on tables: `matches`, `match_scores`, `brackets`, `notifications`, `announcements`, `player_season_stats`
+Create a project at [supabase.com](https://supabase.com). Copy **Project URL**, **anon** key, and **service_role** key from **Project Settings → API**.
 
-### 2. Environment Variables
+### 2. Apply database migrations (pick one)
+
+**Option A — SQL Editor (no CLI):**
+
+```bash
+pnpm db:combine
+```
+
+Open the generated `supabase/ALL_MIGRATIONS_COMBINED.sql`, copy all, paste into **Supabase → SQL → New query**, run once. Then run `supabase/seed.sql` the same way (optional but recommended).
+
+**Option B — Supabase CLI:**
+
+```bash
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+pnpm db:push
+```
+
+Then run `supabase/seed.sql` in the SQL Editor.
+
+Storage buckets and RLS for uploads are created by migration `008_storage.sql`. Realtime publication updates are in `004_events_brackets_matches.sql` and `006_notifications_announcements.sql`. If a line errors because a table is already in the publication, skip that line.
+
+### 3. Environment variables
+
+From the repo root:
+
+```bash
+pnpm env:init
+```
+
+Edit the new files and paste your keys:
 
 **Web App** (`apps/web/.env`):
 ```
@@ -56,7 +82,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 WEB_URL=http://localhost:5173
 ```
 
-### 3. Run Development
+### 4. Run development
 
 ```bash
 # From project root
@@ -64,7 +90,7 @@ pnpm dev:web     # Web app on http://localhost:5173
 pnpm dev:server  # API on http://localhost:3001
 ```
 
-### 4. First-Time Setup
+### 5. First-time setup (Setup Wizard)
 
 Open http://localhost:5173 — the Setup Wizard will guide you through:
 - Creating the Super Admin account

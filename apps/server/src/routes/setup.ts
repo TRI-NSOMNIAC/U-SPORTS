@@ -31,7 +31,7 @@ const setupSchema = z.object({
 
 // Check if setup is needed
 router.get('/status', async (_req, res) => {
-  const { data } = await supabase.from('institution').select('is_setup_complete').single()
+  const { data } = await supabase.from('institution').select('is_setup_complete').maybeSingle()
   res.json({ setupComplete: data?.is_setup_complete ?? false })
 })
 
@@ -63,11 +63,12 @@ router.post('/complete', async (req, res) => {
       role: 'super_admin',
     })
 
-    // 3. Upsert institution
-    const { error: instError } = await supabase.from('institution').upsert({
-      ...body.institution,
-      is_setup_complete: true,
-    })
+    // 3. Institution: single row — update if seed exists, else insert
+    const { data: existingInst } = await supabase.from('institution').select('id').limit(1).maybeSingle()
+    const institutionPayload = { ...body.institution, is_setup_complete: true }
+    const { error: instError } = existingInst?.id
+      ? await supabase.from('institution').update(institutionPayload).eq('id', existingInst.id)
+      : await supabase.from('institution').insert(institutionPayload)
     if (instError) throw new Error(instError.message)
 
     // 4. Activate selected sports

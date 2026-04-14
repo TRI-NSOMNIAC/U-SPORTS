@@ -3,13 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:server": "pnpm --filter server dev",
     "dev": "pnpm run dev:web & pnpm run dev:server",
     "build:web": "pnpm --filter web build",
-    "build:server": "pnpm --filter server build"
+    "build:server": "pnpm --filter server build",
+    "env:init": "powershell -ExecutionPolicy Bypass -File scripts/init-local-env.ps1",
+    "db:combine": "powershell -ExecutionPolicy Bypass -File scripts/combine-migrations.ps1",
+    "db:push": "npx supabase db push",
+    "db:link": "npx supabase link"
   }
 }

@@ -16,3 +16,5 @@ mobile/.packages
 
 # Supabase
 .supabase/
+supabase/.temp/
+supabase/ALL_MIGRATIONS_COMBINED.sql

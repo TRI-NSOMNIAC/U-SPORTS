@@ -31,8 +31,13 @@ export default function App() {
       location.pathname.startsWith('/setup') ||
       location.pathname.startsWith('/jumbotron')
 
-    // Redirect to setup if not configured
-    if (institution && !institution.is_setup_complete && !location.pathname.startsWith('/setup')) {
+    // Redirect to setup if not configured (guest/jumbotron can still load before wizard finishes)
+    const setupIncomplete = !institution || !institution.is_setup_complete
+    const allowedBeforeSetup =
+      location.pathname.startsWith('/setup') ||
+      location.pathname.startsWith('/guest') ||
+      location.pathname.startsWith('/jumbotron')
+    if (setupIncomplete && !allowedBeforeSetup) {
       navigate('/setup')
       return
     }
