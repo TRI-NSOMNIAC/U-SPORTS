@@ -11,6 +11,8 @@ interface AuthState {
   athlete: Athlete | null
   organizer: Organizer | null
   loading: boolean
+  /** Clears persisted profile rows when session user changes or signs out */
+  clearStaleRoleData: () => void
   setSession: (session: Session | null) => void
   setProfile: (profile: Profile | null) => void
   setAthlete: (athlete: Athlete | null) => void
@@ -36,6 +38,8 @@ export const useAuthStore = create<AuthState>()(
       setOrganizer: (organizer) => set({ organizer }),
       setLoading: (loading) => set({ loading }),
 
+      clearStaleRoleData: () => set({ profile: null, athlete: null, organizer: null }),
+
       fetchProfile: async (userId: string) => {
         try {
           const { data: profile } = await supabase
@@ -54,6 +58,8 @@ export const useAuthStore = create<AuthState>()(
               .eq('profile_id', userId)
               .single()
             set({ athlete: athlete ?? null })
+          } else {
+            set({ athlete: null })
           }
 
           if (profile.role === 'organizer') {
@@ -63,6 +69,8 @@ export const useAuthStore = create<AuthState>()(
               .eq('profile_id', userId)
               .single()
             set({ organizer: organizer ?? null })
+          } else {
+            set({ organizer: null })
           }
         } catch (err) {
           console.error('Failed to fetch profile:', err)

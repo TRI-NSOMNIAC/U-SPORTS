@@ -1,18 +1,22 @@
-import React, { useEffect, useState } from 'react'
-import { Save, Palette } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Save, Building2, Palette, Upload } from 'lucide-react'
 import { Button, Input, Card, Alert } from '../../components/ui'
 import { useInstitutionStore } from '../../stores/institutionStore'
 import api from '../../lib/api'
 import { applyTheme } from '../../lib/utils'
+import type { Institution } from '../../types'
 
 export default function SuperAdminSettings() {
   const { institution, fetchInstitution } = useInstitutionStore()
+  const logoFileRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     name: '', abbreviation: '', tagline: '',
     primary_color: '#002D62', secondary_color: '#FFD700',
     address: '', region: '', staff_email_domain: '', student_email_domain: '',
+    logo_url: '',
   })
   const [saving, setSaving] = useState(false)
+  const [logoUploading, setLogoUploading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
@@ -24,6 +28,7 @@ export default function SuperAdminSettings() {
         secondary_color: institution.secondary_color, address: institution.address,
         region: institution.region, staff_email_domain: institution.staff_email_domain,
         student_email_domain: institution.student_email_domain,
+        logo_url: institution.logo_url ?? '',
       })
     }
   }, [institution])
@@ -41,6 +46,51 @@ export default function SuperAdminSettings() {
 
   const update = (field: string, value: string) => setForm(f => ({ ...f, [field]: value }))
 
+  const handleLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setLogoUploading(true)
+    setError('')
+    setSuccess(false)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const { data } = await api.post<Institution>('/admin/institution/logo', fd)
+      setForm((f) => ({ ...f, logo_url: data.logo_url ?? '' }))
+      await fetchInstitution()
+      setSuccess(true)
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined
+      setError(msg ?? 'Logo upload failed')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
+  const clearLogo = async () => {
+    setSaving(true)
+    setError('')
+    setSuccess(false)
+    try {
+      await api.patch('/admin/institution', { logo_url: null })
+      setForm((f) => ({ ...f, logo_url: '' }))
+      await fetchInstitution()
+      setSuccess(true)
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined
+      setError(msg ?? 'Could not remove logo')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
@@ -52,12 +102,52 @@ export default function SuperAdminSettings() {
       {error && <Alert type="danger" onDismiss={() => setError('')}>{error}</Alert>}
 
       <Card>
-        <h2 className="font-bold flex items-center gap-2 mb-4"><Palette className="w-4 h-4" /> Identity & Branding</h2>
+        <h2 className="font-bold flex items-center gap-2 mb-4"><Building2 className="w-4 h-4 text-[var(--text-secondary)] shrink-0" aria-hidden /> Identity & Branding</h2>
         <div className="space-y-4">
           <Input label="Institution Name" value={form.name} onChange={e => update('name', e.target.value)} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Abbreviation" value={form.abbreviation} onChange={e => update('abbreviation', e.target.value)} />
             <Input label="Tagline" value={form.tagline} onChange={e => update('tagline', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-[var(--text-secondary)] block mb-1.5">School logo</label>
+            <p className="text-xs text-[var(--text-muted)] mb-3">
+              JPEG, PNG, WebP, or SVG · max 5MB · visible across login, guest pages, sidebar, and live displays.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="w-20 h-20 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-base)] overflow-hidden flex items-center justify-center shrink-0">
+                {form.logo_url ? (
+                  <img src={form.logo_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <Palette className="w-8 h-8 text-[var(--text-muted)] opacity-40" aria-hidden />
+                )}
+              </div>
+              <div className="flex flex-col gap-2 items-start">
+                <input
+                  ref={logoFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleLogoFile}
+                  disabled={logoUploading}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={logoUploading}
+                  loading={logoUploading}
+                  icon={logoUploading ? undefined : <Upload className="w-4 h-4" />}
+                  onClick={() => logoFileRef.current?.click()}
+                >
+                  {logoUploading ? 'Uploading…' : 'Upload logo'}
+                </Button>
+                {form.logo_url ? (
+                  <Button type="button" variant="ghost" className="text-[#FF3355] hover:text-[#FF3355]" onClick={clearLogo} disabled={saving}>
+                    Remove logo
+                  </Button>
+                ) : null}
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

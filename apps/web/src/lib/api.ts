@@ -17,6 +17,9 @@ api.interceptors.request.use(async (config) => {
   if (data.session?.access_token) {
     config.headers.Authorization = `Bearer ${data.session.access_token}`
   }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
   return config
 })
 
@@ -24,8 +27,16 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      supabase.auth.signOut()
-      window.location.href = '/auth/login'
+      const raw = error.response?.data?.error
+      const msg = typeof raw === 'string' ? raw : ''
+      const deactivated = msg.toLowerCase().includes('deactivated')
+      void supabase.auth.signOut().then(() => {
+        const onSuperAdmin =
+          typeof window !== 'undefined' && window.location.pathname.startsWith('/super-admin')
+        let dest = onSuperAdmin ? '/super-admin/login' : '/auth/login'
+        if (deactivated && !onSuperAdmin) dest += '?reason=deactivated'
+        window.location.href = dest
+      })
     }
     return Promise.reject(error)
   }

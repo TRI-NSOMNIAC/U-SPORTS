@@ -1,8 +1,23 @@
 import { Router } from 'express'
+import multer from 'multer'
 import { z } from 'zod'
 import supabase from '../utils/supabase'
+import {
+  INSTITUTION_LOGO_ALLOWED_MIMES,
+  INSTITUTION_LOGO_MAX_BYTES,
+  uploadInstitutionLogoBuffer,
+} from '../utils/institutionLogoStorage'
 
 const router = Router()
+
+const setupLogoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: INSTITUTION_LOGO_MAX_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (INSTITUTION_LOGO_ALLOWED_MIMES.has(file.mimetype)) cb(null, true)
+    else cb(new Error('Only JPEG, PNG, WebP, or SVG images are allowed'))
+  },
+})
 
 const setupSchema = z
   .object({
@@ -14,8 +29,10 @@ const setupSchema = z
       secondary_color: z.string().default('#FFD700'),
       address: z.string().default(''),
       region: z.string().default(''),
-      staff_email_domain: z.string().min(1),
-      student_email_domain: z.string().min(1),
+      logo_url: z
+        .union([z.string().url(), z.literal(''), z.null()])
+        .optional()
+        .transform((v) => (v === '' || v === null || v === undefined ? null : v)),
     }),
     superAdmin: z.object({
       full_name: z.string().min(1),
@@ -28,22 +45,64 @@ const setupSchema = z
       start_date: z.string(),
       end_date: z.string(),
     }),
+    /** When API server has SETUP_SECRET set, must match to complete first-time setup. */
+    setupSecret: z.string().optional(),
   })
   .transform((b) => {
-    const staff = b.institution.staff_email_domain.trim().toLowerCase()
-    const student = b.institution.student_email_domain.trim().toLowerCase()
     const email = b.superAdmin.email.trim().toLowerCase()
     return {
       ...b,
-      institution: { ...b.institution, staff_email_domain: staff, student_email_domain: student },
       superAdmin: { ...b.superAdmin, email },
     }
   })
 
-// Check if setup is needed
+/** Logo during wizard — unauthenticated; uses service role. Allowed only before setup completes. */
+router.post('/logo', (req, res, next) => {
+  setupLogoUpload.single('file')(req, res, (err: unknown) => {
+    const msg = err instanceof Error ? err.message : 'Upload failed'
+    if (err) return res.status(400).json({ error: msg })
+    next()
+  })
+}, async (req, res) => {
+  try {
+    const { data: existing } = await supabase.from('institution').select('is_setup_complete').maybeSingle()
+    if (existing?.is_setup_complete) {
+      return res.status(403).json({ error: 'Setup already completed' })
+    }
+
+    const expectedSecret = process.env.SETUP_SECRET?.trim()
+    if (expectedSecret) {
+      const provided = String(req.body?.setupSecret ?? '').trim()
+      if (provided !== expectedSecret) {
+        return res.status(403).json({ error: 'Invalid or missing setup key. It must match SETUP_SECRET on the API server.' })
+      }
+    }
+
+    const file = req.file
+    if (!file?.buffer) {
+      return res.status(400).json({ error: 'No file uploaded' })
+    }
+
+    const { publicUrl } = await uploadInstitutionLogoBuffer({
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      folder: 'setup',
+    })
+    res.json({ logo_url: publicUrl })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Upload failed'
+    res.status(400).json({ error: message })
+  }
+})
+
+// Check if setup is needed (does not reveal SETUP_SECRET value)
 router.get('/status', async (_req, res) => {
   const { data } = await supabase.from('institution').select('is_setup_complete').maybeSingle()
-  res.json({ setupComplete: data?.is_setup_complete ?? false })
+  const requiresSetupSecret = Boolean(process.env.SETUP_SECRET?.trim())
+  res.json({
+    setupComplete: data?.is_setup_complete ?? false,
+    requiresSetupSecret,
+  })
 })
 
 // Complete initial setup
@@ -62,30 +121,24 @@ router.post('/complete', async (req, res) => {
 
     const body = setupSchema.parse(req.body)
 
-    const staffDomain = body.institution.staff_email_domain
-    const studentDomain = body.institution.student_email_domain
-    const adminEmail = body.superAdmin.email
+    const expectedSecret = process.env.SETUP_SECRET?.trim()
+    if (expectedSecret) {
+      const provided = (body.setupSecret ?? '').trim()
+      if (provided !== expectedSecret) {
+        return res.status(403).json({ error: 'Invalid or missing setup key. It must match SETUP_SECRET on the API server.' })
+      }
+    }
 
-    if (!adminEmail.endsWith(`@${staffDomain}`)) {
-      return res.status(400).json({
-        error: `Super admin must use a staff email (@${staffDomain}). Student emails (@${studentDomain}) are for athlete registration only.`,
-      })
-    }
-    if (adminEmail.endsWith(`@${studentDomain}`)) {
-      return res.status(400).json({
-        error: `Use your staff account (@${staffDomain}) for the super admin, not @${studentDomain}.`,
-      })
-    }
     if (body.season.end_date < body.season.start_date) {
       return res.status(400).json({ error: 'Season end date must be on or after the start date.' })
     }
 
-    // 1. Create super admin auth user (role in app_metadata so DB trigger picks it reliably)
+    // 1. Create the first admin auth user.
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: body.superAdmin.email,
       password: body.superAdmin.password,
       email_confirm: true,
-      app_metadata: { role: 'super_admin' },
+      app_metadata: { role: 'Admin' },
       user_metadata: { full_name: body.superAdmin.full_name },
     })
     if (authError || !authData?.user) {
@@ -103,7 +156,7 @@ router.post('/complete', async (req, res) => {
       id: authData.user.id,
       email: body.superAdmin.email,
       full_name: body.superAdmin.full_name,
-      role: 'super_admin',
+      role: 'Admin',
     })
     if (profileError) {
       return res.status(400).json({ error: profileError.message })

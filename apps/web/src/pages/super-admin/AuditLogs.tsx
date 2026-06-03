@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react'
-import { Table, Card, Badge, Skeleton } from '../../components/ui'
+import { Table, Badge } from '../../components/ui'
 import api from '../../lib/api'
 import type { AuditLog } from '../../types'
 import { formatDateTime } from '../../lib/utils'
+
+function formatEntityId(id: string | null): string {
+  if (!id) return '—'
+  if (id.length <= 14) return id
+  return `${id.slice(0, 8)}…${id.slice(-4)}`
+}
 
 export default function SuperAdminAuditLogs() {
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -34,9 +40,23 @@ export default function SuperAdminAuditLogs() {
           { key: 'time', label: 'Time' },
         ]}
         data={logs.map(log => ({
-          actor: <span className="font-medium">{(log.actor as any)?.full_name ?? 'System'}</span>,
+          actor: (
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium">{log.actor?.full_name ?? 'System'}</span>
+              {log.actor?.email ? (
+                <span className="text-xs text-[var(--text-muted)]">{log.actor.email}</span>
+              ) : null}
+            </div>
+          ),
           action: <code className="text-xs bg-[var(--surface-elevated)] px-2 py-0.5 rounded">{log.action}</code>,
-          entity: <Badge size="sm">{log.entity_type}</Badge>,
+          entity: (
+            <div className="flex flex-col gap-0.5 items-start">
+              <Badge size="sm">{log.entity_type}</Badge>
+              <span className="text-[10px] font-mono text-[var(--text-muted)]" title={log.entity_id ?? undefined}>
+                {formatEntityId(log.entity_id)}
+              </span>
+            </div>
+          ),
           time: <span className="text-xs text-[var(--text-muted)]">{formatDateTime(log.created_at)}</span>,
         }))}
         emptyMessage="No audit logs found"

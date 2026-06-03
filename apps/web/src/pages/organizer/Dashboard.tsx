@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Trophy, UserCheck, Clock, Play, Mic2 } from 'lucide-react'
+import { Trophy, UserCheck, Play, Mic2 } from 'lucide-react'
 import { StatCard, Card, Badge, Button, Skeleton } from '../../components/ui'
+import { CreateEventModal } from '../../components/organizer/CreateEventModal'
+import api from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
-import { formatDateTime, getSportLabel, getSportIcon } from '../../lib/utils'
+import { formatEnumLabel, getSportIcon, getSportLabel, organizerEventStatusLabel } from '../../lib/utils'
+import { fetchParticipantLabels } from '../../lib/participantLabels'
 import type { Event, Match } from '../../types'
 
 export default function OrganizerDashboard() {
@@ -14,19 +17,49 @@ export default function OrganizerDashboard() {
   const [liveMatches, setLiveMatches] = useState<Match[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [showCreateEvent, setShowCreateEvent] = useState(false)
+  const [liveMatchLabels, setLiveMatchLabels] = useState<Record<string, string>>({})
 
   useEffect(() => {
     Promise.all([
       supabase.from('events').select('*').in('status', ['in_progress', 'draft', 'registration']).order('created_at', { ascending: false }).limit(5),
       supabase.from('matches').select('*').eq('status', 'live'),
-      supabase.from('athletes').select('id', { count: 'exact', head: true }).in('verification_status', ['pending', 'under_review']),
-    ]).then(([evRes, mRes, aRes]) => {
+      api.get<unknown[]>('/students/pending-cor').catch(() => ({ data: [] as unknown[] })),
+      api.get<unknown[]>('/athletes/pending').catch(() => ({ data: [] as unknown[] })),
+      api
+        .get<unknown[]>('/athletes', {
+          params: { medical_clearance_queue: 'true', has_med_cert: 'true' },
+        })
+        .catch(() => ({ data: [] as unknown[] })),
+    ]).then(([evRes, mRes, corRes, verRes, medRes]) => {
       setEvents(evRes.data ?? [])
       setLiveMatches(mRes.data ?? [])
-      setPendingCount(aRes.count ?? 0)
+      const cor = Array.isArray(corRes.data) ? corRes.data.length : 0
+      const ver = Array.isArray(verRes.data) ? verRes.data.length : 0
+      const med = Array.isArray(medRes.data) ? medRes.data.length : 0
+      setPendingCount(cor + ver + med)
       setLoading(false)
     })
   }, [])
+
+  useEffect(() => {
+    const ids = [
+      ...new Set(
+        liveMatches.flatMap((m) => [m.participant_a_id, m.participant_b_id].filter((x): x is string => !!x)),
+      ),
+    ]
+    if (ids.length === 0) {
+      setLiveMatchLabels({})
+      return
+    }
+    let cancelled = false
+    void fetchParticipantLabels(ids).then((map) => {
+      if (!cancelled) setLiveMatchLabels(map)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [liveMatches])
 
   return (
     <div className="space-y-6">
@@ -40,7 +73,7 @@ export default function OrganizerDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="My Events" value={events.length} subValue="Active + Draft" />
         <StatCard label="Live Now" value={liveMatches.length} subValue="Matches in progress" />
-        <StatCard label="Pending Verif." value={pendingCount} subValue="Needs review" />
+        <StatCard label="Pending Verif." value={pendingCount} subValue="COR + roster + medical" />
         <StatCard label="Sports" value={organizer?.assigned_sports?.length ?? 0} subValue="Assigned" />
       </div>
 
@@ -52,19 +85,30 @@ export default function OrganizerDashboard() {
             <span className="font-bold text-[#FF3355] text-sm">LIVE MATCHES</span>
           </div>
           <div className="space-y-2">
-            {liveMatches.map(m => (
-              <div key={m.id} className="flex items-center justify-between">
-                <span className="text-sm">Match {m.id.slice(0, 8)}...</span>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => navigate(`/organizer/scoring/${m.id}`)}>
-                    Score Now
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => window.open(`/jumbotron/${m.id}`, '_blank')}>
-                    Jumbotron
-                  </Button>
+            {liveMatches.map((m) => {
+              const la = m.participant_a_id
+                ? liveMatchLabels[m.participant_a_id] ?? `Team ${m.participant_a_id.slice(0, 6)}`
+                : 'TBD'
+              const lb = m.participant_b_id
+                ? liveMatchLabels[m.participant_b_id] ?? `Team ${m.participant_b_id.slice(0, 6)}`
+                : 'TBD'
+              return (
+                <div key={m.id} className="flex items-center justify-between gap-3 flex-wrap">
+                  <span className="text-sm min-w-0">
+                    {la}{' '}
+                    <span className="text-[var(--text-muted)] font-normal">vs</span> {lb}
+                  </span>
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" onClick={() => navigate(`/organizer/scoring/${m.id}`)}>
+                      Score Now
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => window.open(`/jumbotron/${m.id}`, '_blank')}>
+                      Jumbotron
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -87,9 +131,11 @@ export default function OrganizerDashboard() {
                   <span className="text-lg">{getSportIcon(e.sport as any)}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{e.name}</p>
-                    <p className="text-xs text-[var(--text-muted)]">{e.format.replace('_', ' ')}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{formatEnumLabel(e.format)}</p>
                   </div>
-                  <Badge variant={e.status === 'in_progress' ? 'danger' : e.status === 'completed' ? 'success' : 'default'} size="sm">{e.status}</Badge>
+                  <Badge variant={e.status === 'in_progress' ? 'danger' : e.status === 'completed' ? 'success' : 'default'} size="sm">
+                    {organizerEventStatusLabel(e.status, !!e.is_tryout)}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -101,8 +147,8 @@ export default function OrganizerDashboard() {
           <h2 className="font-bold text-lg mb-4">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'New Event', icon: Trophy, action: () => navigate('/organizer/events') },
-              { label: 'Review Athletes', icon: UserCheck, action: () => navigate('/organizer/athletes') },
+              { label: 'New Event', icon: Trophy, action: () => setShowCreateEvent(true) },
+              { label: 'Review students', icon: UserCheck, action: () => navigate('/organizer/reviews') },
               { label: 'Announcements', icon: Mic2, action: () => navigate('/organizer/announcements') },
               { label: 'Live Score', icon: Play, action: () => navigate('/organizer/events') },
             ].map(a => {
@@ -117,6 +163,8 @@ export default function OrganizerDashboard() {
           </div>
         </Card>
       </div>
+
+      <CreateEventModal open={showCreateEvent} onClose={() => setShowCreateEvent(false)} />
     </div>
   )
 }

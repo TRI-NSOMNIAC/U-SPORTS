@@ -94,10 +94,13 @@ VALUES
     "smash_pct": {"label": "Smash%", "type": "percentage"},
     "seed": {"label": "Seed", "type": "integer"}
   }',
-  '["Singles Men", "Singles Women", "Doubles Men", "Doubles Women", "Mixed Doubles"]',
+  '[]',
   3
 )
 ON CONFLICT (slug) DO UPDATE SET
   stat_definitions = EXCLUDED.stat_definitions,
   positions = EXCLUDED.positions,
   is_active = EXCLUDED.is_active;
+
+-- Optional QA accounts (60 users on students.nu-dasma.edu.ph): run `pnpm db:seed:dev`.
+

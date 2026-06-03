@@ -1,12 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final appThemeProvider = Provider<ThemeData>((ref) {
-  return AppTheme.dark();
-});
-
-class AppTheme {
-  static const Color bgPrimary = Color(0xFF0A0A0F);
+class AppTheme {  static const Color bgPrimary = Color(0xFF0A0A0F);
   static const Color bgSecondary = Color(0xFF111118);
   static const Color surfaceCard = Color(0xFF16161E);
   static const Color surfaceElevated = Color(0xFF1E1E2A);
@@ -83,6 +77,72 @@ class AppTheme {
         backgroundColor: surfaceCard,
         selectedItemColor: accent,
         unselectedItemColor: textMuted,
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
+    );
+  }
+
+  static ThemeData light() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFF5F5F8),
+      colorScheme: ColorScheme.light(
+        primary: accent,
+        secondary: schoolPrimary,
+        surface: const Color(0xFFFFFFFF),
+        onSurface: const Color(0xFF0A0A0F),
+        error: danger,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFFFFFFFF),
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF0A0A0F),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: const Color(0xFFFFFFFF),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: borderSubtle),
+        ),
+        elevation: 0,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFF0F0F4),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: borderSubtle),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: borderSubtle),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: accent, width: 1.5),
+        ),
+        labelStyle: const TextStyle(color: Color(0xFF55556A), fontSize: 13),
+        hintStyle: const TextStyle(color: Color(0xFF8888A0)),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: Color(0xFFFFFFFF),
+        selectedItemColor: accent,
+        unselectedItemColor: Color(0xFF55556A),
         type: BottomNavigationBarType.fixed,
         elevation: 0,
       ),

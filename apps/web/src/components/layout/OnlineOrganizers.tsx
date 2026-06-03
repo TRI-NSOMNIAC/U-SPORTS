@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { getInitials, cn } from '../../lib/utils'
 import { useNavigate } from 'react-router'
+import { sessionScopedProfile } from '../../lib/sessionProfile'
 
 interface PresenceState {
   user_id: string
@@ -13,7 +14,8 @@ interface PresenceState {
 }
 
 export default function OnlineOrganizers() {
-  const { profile } = useAuthStore()
+  const { profile, session } = useAuthStore()
+  const scopedProfile = sessionScopedProfile(session, profile)
   const [online, setOnline] = useState<PresenceState[]>([])
   const [expanded, setExpanded] = useState(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -22,10 +24,10 @@ export default function OnlineOrganizers() {
   const [isIdle, setIsIdle] = useState(false)
 
   useEffect(() => {
-    if (!profile || (profile.role !== 'organizer' && profile.role !== 'super_admin')) return
+    if (!scopedProfile || (scopedProfile.role !== 'organizer' && scopedProfile.role !== 'super_admin')) return
 
     const channel = supabase.channel('organizer-presence', {
-      config: { presence: { key: profile.id } },
+      config: { presence: { key: scopedProfile.id } },
     })
 
     channelRef.current = channel
@@ -34,14 +36,14 @@ export default function OnlineOrganizers() {
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState<PresenceState>()
         const all = Object.values(state).flat()
-        setOnline(all.filter((s) => s.user_id !== profile.id))
+        setOnline(all.filter((s) => s.user_id !== scopedProfile.id))
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({
-            user_id: profile.id,
-            full_name: profile.full_name,
-            role: profile.role,
+            user_id: scopedProfile.id,
+            full_name: scopedProfile.full_name,
+            role: scopedProfile.role,
             current_page: window.location.pathname,
             online_at: new Date().toISOString(),
           })
@@ -63,7 +65,7 @@ export default function OnlineOrganizers() {
       window.removeEventListener('keydown', resetIdle)
       if (idleTimer.current) clearTimeout(idleTimer.current)
     }
-  }, [profile])
+  }, [scopedProfile])
 
   if (online.length === 0) return null
 

@@ -1,13 +1,17 @@
 import React, { useState } from 'react'
-import { useNavigate, Link } from 'react-router'
+import { useNavigate, useLocation, Link, useSearchParams } from 'react-router'
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react'
-import { Button, Input, Alert, Card } from '../../components/ui'
+import { Button, Input, Alert } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useInstitutionStore } from '../../stores/institutionStore'
 import { useAuthStore } from '../../stores/authStore'
 import { loginFormSchema } from '../../lib/validation/forms'
+import { defaultPostLoginPath, safeInternalPath } from '../../lib/navigation'
+import { sessionScopedProfile } from '../../lib/sessionProfile'
 
 export default function LoginPage() {
+  const [searchParams] = useSearchParams()
+  const deactivatedBanner = searchParams.get('reason') === 'deactivated'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -16,6 +20,7 @@ export default function LoginPage() {
   const { institution } = useInstitutionStore()
   const { fetchProfile } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,13 +38,17 @@ export default function LoginPage() {
       if (authError) throw new Error(authError.message)
       if (data.session) {
         await fetchProfile(data.session.user.id)
-        const { profile } = useAuthStore.getState()
-        const routes: Record<string, string> = {
-          super_admin: '/super-admin',
-          organizer: '/organizer',
-          athlete: '/athlete',
+        const { profile: nextProfile, session: nextSession } = useAuthStore.getState()
+        const scoped = sessionScopedProfile(nextSession ?? data.session, nextProfile)
+
+        if (scoped?.role === 'super_admin') {
+          await supabase.auth.signOut()
+          useAuthStore.setState({ session: null, user: null, profile: null })
+          throw new Error('Super admins sign in through the Super Admin Portal.')
         }
-        navigate(routes[profile?.role ?? 'athlete'] ?? '/guest')
+
+        const returnTo = safeInternalPath((location.state as { from?: string } | null)?.from)
+        navigate(returnTo ?? defaultPostLoginPath(scoped?.role), { replace: true })
       }
     } catch (err: any) {
       setError(err.message || 'Invalid email or password')
@@ -49,7 +58,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] flex">
+    <div className="min-h-screen bg-[var(--bg-primary)] flex">
       {/* Left panel - branding */}
       <div
         className="hidden lg:flex w-1/2 flex-col items-center justify-center p-12 relative overflow-hidden"
@@ -78,6 +87,9 @@ export default function LoginPage() {
       <div className="flex-1 flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden text-center">
+            {institution?.logo_url ? (
+              <img src={institution.logo_url} alt="" className="w-16 h-16 mx-auto mb-3 rounded-full object-cover border border-[var(--border-subtle)]" />
+            ) : null}
             <h1 className="text-2xl font-bold font-[Barlow_Condensed]">U-Sports</h1>
             <p className="text-[var(--text-muted)] text-sm">{institution?.name}</p>
           </div>
@@ -86,6 +98,12 @@ export default function LoginPage() {
           <p className="text-[var(--text-muted)] text-sm mb-6">
             Access your U-Sports dashboard
           </p>
+
+          {deactivatedBanner && (
+            <Alert type="warning" className="mb-4">
+              Your organizer account was deactivated. Contact your super admin if you need access restored.
+            </Alert>
+          )}
 
           {error && <Alert type="danger" className="mb-4">{error}</Alert>}
 
@@ -111,7 +129,7 @@ export default function LoginPage() {
               />
               <button
                 type="button"
-                className="mt-1 text-xs text-[var(--text-muted)] hover:text-white flex items-center gap-1"
+                className="mt-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1"
                 onClick={() => setShowPass(!showPass)}
               >
                 {showPass ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
@@ -125,14 +143,14 @@ export default function LoginPage() {
 
           <div className="mt-6 space-y-3 text-center text-sm">
             <p className="text-[var(--text-muted)]">
-              Are you a student athlete?{' '}
+              New student?{' '}
               <Link to="/auth/register" className="text-[#0066FF] hover:underline font-medium">
-                Register here
+                Create an account
               </Link>
             </p>
             <p className="text-[var(--text-muted)]">
               Just browsing?{' '}
-              <Link to="/guest" className="text-[var(--text-secondary)] hover:text-white">
+              <Link to="/guest" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                 View as Guest →
               </Link>
             </p>

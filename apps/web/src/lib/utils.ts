@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import type { Sport, StatDefinition } from '../types'
+import type { EventStatus, Sport, StatDefinition } from '../types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -22,6 +22,52 @@ export function formatDateTime(date: string | Date): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/** Human-readable label for underscore enums (`in_progress` → `In Progress`). */
+export function formatEnumLabel(value: string | null | undefined): string {
+  if (value == null || value === '') return ''
+  return value
+    .split('_')
+    .map((part) => (part.length ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : ''))
+    .filter(Boolean)
+    .join(' ')
+}
+
+/** Guest-friendly labels (no raw enums). */
+export function eventPublicLifecycleLabel(status: EventStatus | string): string {
+  switch (status) {
+    case 'draft':
+      return 'Preparing'
+    case 'registration':
+      return 'Upcoming'
+    case 'in_progress':
+      return 'Ongoing'
+    case 'completed':
+      return 'Finished'
+    case 'cancelled':
+      return 'Cancelled'
+    default:
+      return formatEnumLabel(status)
+  }
+}
+
+/** Organizer-facing status badges: distinguishes tryout registration vs tournament “upcoming”. */
+export function organizerEventStatusLabel(status: EventStatus | string, isTryout: boolean): string {
+  switch (status) {
+    case 'registration':
+      return isTryout ? 'Open registration' : 'Upcoming'
+    case 'draft':
+      return 'Draft'
+    case 'in_progress':
+      return 'Ongoing'
+    case 'completed':
+      return 'Finished'
+    case 'cancelled':
+      return 'Cancelled'
+    default:
+      return formatEnumLabel(status)
+  }
 }
 
 export function formatTime(date: string | Date): string {
@@ -90,4 +136,22 @@ export function generateStudentEmail(fullName: string, studentDomain: string): s
 
 export function generateStaffEmail(fullName: string, staffDomain: string): string {
   return generateStudentEmail(fullName, staffDomain)
+}
+
+/** Filter organizer student enrollment lists by name, email, ID, year, or department. */
+export function matchesEnrollmentSearch(
+  row: {
+    full_name: string
+    email: string
+    student_id?: string | null
+    year_level?: string | null
+    department?: string | null
+  },
+  query: string,
+): boolean {
+  const t = query.trim().toLowerCase()
+  if (!t) return true
+  return [row.full_name, row.email, row.student_id, row.year_level, row.department].some((x) =>
+    String(x ?? '').toLowerCase().includes(t),
+  )
 }

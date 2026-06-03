@@ -1,9 +1,76 @@
 import { Router } from 'express'
-import { z } from 'zod'
+import { z, type ZodIssue } from 'zod'
 import { requireAuth, requireRole, AuthRequest } from '../middleware/auth'
 import supabase from '../utils/supabase'
+import { writeAuditLog } from '../utils/writeAuditLog'
 
 const router = Router()
+
+/** HTML datetime-local uses `YYYY-MM-DDTHH:mm` without a timezone; Zod's default `.datetime()` expects a trailing `Z`. */
+function localDatetimeStringToIso(input: string): string {
+  const trimmed = input.trim()
+  const withSeconds = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed) ? `${trimmed}:00` : trimmed
+  const d = new Date(withSeconds)
+  if (Number.isNaN(d.getTime())) throw new Error('Invalid date and time')
+  return d.toISOString()
+}
+
+const optionalTimestamptzFromPicker = z.preprocess(
+  (val) => (val === '' || val === null ? undefined : val),
+  z
+    .string()
+    .datetime({ local: true })
+    .optional()
+    .transform((s) => (s === undefined ? undefined : localDatetimeStringToIso(s)))
+)
+
+function formatAnnouncementValidationIssues(issues: ZodIssue[]): string {
+  const messages: string[] = []
+  const seen = new Set<string>()
+  for (const issue of issues) {
+    const pathKey = issue.path.length ? String(issue.path[0]) : ''
+    let msg: string
+    if (pathKey === 'body' && issue.code === 'too_small') {
+      msg = 'Message body cannot be empty.'
+    } else if (pathKey === 'title' && issue.code === 'too_small') {
+      msg = 'Title cannot be empty.'
+    } else if (pathKey === 'expires_at') {
+      msg = 'Expiration date is invalid. Leave it empty for no expiry, or pick a valid date and time.'
+    } else if (pathKey === 'new_scheduled_at') {
+      msg =
+        issue.code === z.ZodIssueCode.custom
+          ? issue.message
+          : 'New date and time is invalid. Choose a valid date and time for the reschedule.'
+    } else if (pathKey) {
+      msg = `${pathKey.replace(/_/g, ' ')}: ${issue.message}`
+    } else {
+      msg = issue.message
+    }
+    if (!seen.has(msg)) {
+      seen.add(msg)
+      messages.push(msg)
+    }
+  }
+  return messages.join(' ')
+}
+
+type AnnouncementDisplayMode = 'banner' | 'notification_only' | 'hero_slider'
+
+/** Older DBs (pre-migration 023) only allow banner + notification_only. Try requested mode first, then downgrade. */
+function displayModeInsertAttempts(requested: AnnouncementDisplayMode): AnnouncementDisplayMode[] {
+  const order: AnnouncementDisplayMode[] = [requested]
+  if (requested === 'hero_slider') {
+    order.push('banner', 'notification_only')
+  } else if (requested === 'banner') {
+    order.push('notification_only')
+  }
+  const seen = new Set<AnnouncementDisplayMode>()
+  return order.filter((m) => {
+    if (seen.has(m)) return false
+    seen.add(m)
+    return true
+  })
+}
 
 // Get announcements
 router.get('/', async (req, res) => {
@@ -20,31 +87,78 @@ router.get('/', async (req, res) => {
 })
 
 // Create announcement
-router.post('/', requireAuth, requireRole('organizer', 'super_admin'), async (req: AuthRequest, res) => {
-  const schema = z.object({
-    type: z.enum(['emergency', 'reschedule', 'reminder', 'system']),
-    title: z.string().min(1),
-    body: z.string().min(1),
-    urgency: z.enum(['critical', 'high', 'normal', 'low']).default('normal'),
-    audience_type: z.enum(['all', 'sport', 'event', 'team']).default('all'),
-    audience_id: z.string().uuid().optional(),
-    is_public: z.boolean().default(false),
-    linked_match_id: z.string().uuid().optional(),
-    new_scheduled_at: z.string().datetime().optional(),
-    new_venue: z.string().optional(),
-    expires_at: z.string().datetime().optional(),
-  })
+router.post('/', requireAuth, requireRole('Organizer', 'Admin'), async (req: AuthRequest, res) => {
+  const schema = z
+    .object({
+      type: z.enum(['emergency', 'reschedule', 'reminder', 'system']),
+      title: z.preprocess((v) => (typeof v === 'string' ? v.trim() : v), z.string().min(1)),
+      body: z.preprocess((v) => (typeof v === 'string' ? v.trim() : v), z.string().min(1)),
+      urgency: z.enum(['critical', 'high', 'normal', 'low']).default('normal'),
+      audience_type: z.enum(['all', 'sport', 'event', 'team']).default('all'),
+      audience_id: z.string().uuid().optional(),
+      is_public: z.boolean().default(false),
+      linked_match_id: z.string().uuid().optional(),
+      new_scheduled_at: optionalTimestamptzFromPicker,
+      new_venue: z.string().optional(),
+      expires_at: optionalTimestamptzFromPicker,
+      display_mode: z.enum(['banner', 'notification_only', 'hero_slider']).default('notification_only'),
+    })
+    .superRefine((data, ctx) => {
+      if (data.type === 'reschedule' && !data.new_scheduled_at) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'New date and time is required when the announcement type is Reschedule.',
+          path: ['new_scheduled_at'],
+        })
+      }
+    })
 
   try {
-    const body = schema.parse(req.body)
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json({ error: formatAnnouncementValidationIssues(parsed.error.issues) })
+    }
+    const body = parsed.data
 
-    const { data: announcement, error } = await supabase
-      .from('announcements')
-      .insert({ ...body, created_by: req.user!.id })
-      .select()
-      .single()
+    const insertBase = {
+      type: body.type,
+      title: body.title,
+      body: body.body,
+      urgency: body.urgency,
+      audience_type: body.audience_type,
+      audience_id: body.audience_id ?? null,
+      is_public: body.is_public,
+      linked_match_id: body.linked_match_id ?? null,
+      new_scheduled_at: body.new_scheduled_at ?? null,
+      new_venue: body.new_venue ?? null,
+      expires_at: body.expires_at ?? null,
+      created_by: req.user!.id,
+    }
 
-    if (error) throw new Error(error.message)
+    let announcement: { id: string } | null = null
+    let lastInsertError: { message: string } | null = null
+
+    for (const display_mode of displayModeInsertAttempts(body.display_mode)) {
+      const { data, error } = await supabase
+        .from('announcements')
+        .insert({ ...insertBase, display_mode })
+        .select()
+        .single()
+
+      if (!error && data) {
+        announcement = data
+        break
+      }
+      lastInsertError = error ?? { message: 'Insert failed' }
+      const msg = lastInsertError.message ?? ''
+      if (!msg.includes('announcements_display_mode_check')) {
+        throw new Error(msg)
+      }
+    }
+
+    if (!announcement) {
+      throw new Error(lastInsertError?.message ?? 'Create failed')
+    }
 
     // If reschedule, update the linked match
     if (body.type === 'reschedule' && body.linked_match_id && body.new_scheduled_at) {
@@ -76,8 +190,24 @@ router.post('/', requireAuth, requireRole('organizer', 'super_admin'), async (re
 })
 
 // Delete announcement
-router.delete('/:id', requireAuth, requireRole('organizer', 'super_admin'), async (req, res) => {
-  await supabase.from('announcements').delete().eq('id', req.params.id)
+router.delete('/:id', requireAuth, requireRole('Organizer', 'Admin'), async (req: AuthRequest, res) => {
+  const announcementId = req.params.id
+  const { data: ann } = await supabase
+    .from('announcements')
+    .select('title, type')
+    .eq('id', announcementId)
+    .maybeSingle()
+
+  await supabase.from('announcements').delete().eq('id', announcementId)
+
+  await writeAuditLog({
+    actorId: req.user!.id,
+    action: 'announcement_deleted',
+    entityType: 'announcement',
+    entityId: announcementId,
+    details: ann ? { title: ann.title, type: ann.type } : {},
+  })
+
   res.json({ success: true })
 })
 
@@ -89,11 +219,11 @@ async function broadcastNotification(
   let recipientIds: string[] = []
 
   if (announcement.audience_type === 'all') {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('role', 'athlete')
-    recipientIds = (profiles ?? []).map((p: { id: string }) => p.id)
+    const { data: athletes } = await supabase
+      .from('athletes')
+      .select('profile_id')
+      .eq('verification_status', 'approved')
+    recipientIds = (athletes ?? []).map((a: { profile_id: string }) => a.profile_id)
   } else if (announcement.audience_type === 'sport' && announcement.audience_id) {
     const { data: athletes } = await supabase
       .from('athletes')

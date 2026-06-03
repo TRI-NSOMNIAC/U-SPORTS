@@ -1,4 +1,6 @@
-export type Role = 'super_admin' | 'organizer' | 'athlete'
+export type Role = 'super_admin' | 'organizer' | 'athlete' | 'student'
+
+export type EnrollmentStatus = 'unverified' | 'verified'
 
 export type Sport = 'basketball' | 'volleyball' | 'table-tennis'
 
@@ -65,6 +67,12 @@ export interface Profile {
   avatar_url: string | null
   email: string
   created_at: string
+  enrollment_status?: EnrollmentStatus | null
+  /** Set when an organizer moved enrollment from verified → unverified; drives resubmit-COR copy in the app. */
+  enrollment_verification_reset_at?: string | null
+  student_id?: string | null
+  year_level?: string | null
+  department?: string | null
 }
 
 export interface Organizer {
@@ -91,6 +99,9 @@ export interface Athlete {
   review_notes: string | null
   reviewed_at: string | null
   profile?: Profile
+  medical_cleared?: boolean
+  /** Set when organizer revokes medical clearance; cleared when clearance is granted again. */
+  medical_clearance_revoked_at?: string | null
 }
 
 export interface VerificationDocument {
@@ -101,12 +112,16 @@ export interface VerificationDocument {
   uploaded_at: string
 }
 
+export type TeamRosterContext = 'tryout' | 'official'
+
 export interface Team {
   id: string
   name: string
   sport: Sport
   season_id: string
   captain_id: string | null
+  /** Tryout squads use enrolled students; official teams use approved athletes. */
+  roster_context?: TeamRosterContext | null
   members?: Athlete[]
   coaches?: Organizer[]
 }
@@ -128,17 +143,25 @@ export interface Event {
   format: EventFormat
   status: EventStatus
   category: string | null
+  description?: string | null
   created_by: string
   created_at: string
+  is_tryout?: boolean
   season?: Season
 }
 
-export interface EventParticipant {
+export interface TryoutRegistration {
   id: string
   event_id: string
-  participant_id: string
-  participant_type: ParticipantType
-  seed: number | null
+  profile_id: string
+  season_id: string
+  sport: Sport
+  status: 'registered' | 'selected' | 'not_selected' | 'withdrawn'
+  passed_tryout: boolean | null
+  admin_notes: string | null
+  created_at: string
+  updated_at?: string
+  profile?: Profile
 }
 
 export interface Bracket {
@@ -246,6 +269,7 @@ export interface Insight {
   entity_type: 'player' | 'team'
   entity_id: string
   sport: Sport
+  season_id?: string | null
   insight_text: string
   insight_type: InsightType
   data: Record<string, unknown>
@@ -266,6 +290,7 @@ export interface Announcement {
   linked_match_id: string | null
   new_scheduled_at: string | null
   new_venue: string | null
+  display_mode: 'banner' | 'notification_only' | 'hero_slider'
   published_at: string
   expires_at: string | null
   creator?: Profile
